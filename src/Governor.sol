@@ -3,17 +3,17 @@
 
 pragma solidity ^0.8.0;
 
-import "openzeppelin-contracts/contracts/token/ERC721/IERC721Receiver.sol";
-import "openzeppelin-contracts/contracts/token/ERC1155/IERC1155Receiver.sol";
-import "openzeppelin-contracts/contracts/utils/cryptography/ECDSA.sol";
-import "openzeppelin-contracts/contracts/utils/cryptography/EIP712.sol";
-import "openzeppelin-contracts/contracts/utils/introspection/ERC165.sol";
-import "openzeppelin-contracts/contracts/utils/math/SafeCast.sol";
-import "openzeppelin-contracts/contracts/utils/structs/DoubleEndedQueue.sol";
-import "openzeppelin-contracts/contracts/utils/Address.sol";
-import "openzeppelin-contracts/contracts/utils/Context.sol";
-import "openzeppelin-contracts/contracts/utils/Timers.sol";
-import "openzeppelin-contracts/contracts/governance/IGovernor.sol";
+import "@openzeppelin/token/ERC721/IERC721Receiver.sol";
+import "@openzeppelin/token/ERC1155/IERC1155Receiver.sol";
+import "@openzeppelin/utils/cryptography/ECDSA.sol";
+import "@openzeppelin/utils/cryptography/EIP712.sol";
+import "@openzeppelin/utils/introspection/ERC165.sol";
+import "@openzeppelin/utils/math/SafeCast.sol";
+import "@openzeppelin/utils/structs/DoubleEndedQueue.sol";
+import "@openzeppelin/utils/Address.sol";
+import "@openzeppelin/utils/Context.sol";
+import "@openzeppelin/utils/Timers.sol";
+import "@openzeppelin/governance/IGovernor.sol";
 
 /**
  * @dev Core of the governance system, designed to be extended though various modules.
