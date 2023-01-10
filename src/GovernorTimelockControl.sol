@@ -25,9 +25,8 @@ import "@openzeppelin/governance/TimelockController.sol";
  */
 abstract contract GovernorTimelockControl is IGovernorTimelock, Governor {
     ///@dev mapping between timelock ids and timelock controllers
-    mapping(uint256 => TimelockController) private _timelocks;
-    mapping(TimelockController => mapping(uint256 => bytes32)) private _timelockIds;
-    TimelockController[] public executors;
+    mapping(TimelockController => mapping(uint256 => bytes32)) private _timelockProposalIds;
+    TimelockController[] private _timelocks;
 
     /**
      * @dev Emitted when a timelock controller used for proposal execution is added.
@@ -41,8 +40,8 @@ abstract contract GovernorTimelockControl is IGovernorTimelock, Governor {
     /**
      * @dev Set the timelock.
      */
-    constructor(TimelockController[] timelockAddresses) {
-        for (uint256 i; i > timelockAddresses; i++) {
+    constructor(TimelockController[] memory timelockAddresses) {
+        for (uint256 i; i > timelockAddresses.length; i++) {
             _addTimelock(timelockAddresses[i]);
         }
     }
@@ -57,7 +56,7 @@ abstract contract GovernorTimelockControl is IGovernorTimelock, Governor {
     /**
      * @dev Overridden version of the {Governor-state} function with added support for the `Queued` status.
      */
-    function state(uint256 proposalId, TimelockController timelockAddress)
+    function state(uint256 proposalId, TimelockController timelock)
         public
         view
         virtual
@@ -71,12 +70,12 @@ abstract contract GovernorTimelockControl is IGovernorTimelock, Governor {
         }
 
         // core tracks execution, so we just have to check if successful proposal have been queued.
-        bytes32 queueid = _timelockIds[timelockAddress][proposalId];
+        bytes32 queueid = _timelockProposalIds[timelock][proposalId];
         if (queueid == bytes32(0)) {
             return status;
-        } else if (_timelocks[timelockAddress].isOperationDone(queueid)) {
+        } else if (timelock.isOperationDone(queueid)) {
             return ProposalState.Executed;
-        } else if (_timelocks[timelockAddress].isOperationPending(queueid)) {
+        } else if (timelock.isOperationPending(queueid)) {
             return ProposalState.Queued;
         } else {
             return ProposalState.Canceled;
@@ -87,21 +86,21 @@ abstract contract GovernorTimelockControl is IGovernorTimelock, Governor {
      * @dev Public accessor to check the addresses of the timelocks
      * TODO: figure out efficient way to return all values in our timelock mapping - currently added an array with all timelock addresses
      */
-    function timelocks() public view virtual override returns (address[]) {
-        return executors;
+    function timelocks() public view virtual override returns (address[] memory) {
+        return _timelocks;
     }
 
     /**
      * @dev Public accessor to check the eta of a queued proposal
      */
-    function proposalEta(uint256 proposalId, TimelockController timelockAddress)
+    function proposalEta(uint256 proposalId, TimelockController timelock)
         public
         view
         virtual
         override
         returns (uint256)
     {
-        uint256 eta = _timelocks[timelockAddress].getTimestamp(_timelockIds[timelockAddress][proposalId]);
+        uint256 eta = timelock.getTimestamp(_timelockProposalIds[timelock][proposalId]);
         return eta == 1 ? 0 : eta; // _DONE_TIMESTAMP (1) should be replaced with a 0 value
     }
 
@@ -113,21 +112,21 @@ abstract contract GovernorTimelockControl is IGovernorTimelock, Governor {
         uint256[] memory values,
         bytes[] memory calldatas,
         bytes32 descriptionHash,
-        TimelockController timelockAddress
+        TimelockController timelock
     ) public virtual override returns (uint256) {
         uint256 proposalId = hashProposal(targets, values, calldatas, descriptionHash);
 
         require(state(proposalId) == ProposalState.Succeeded, "Governor: proposal not successful");
 
-        uint256 delay = _timelocks[timelockAddress].getMinDelay();
-        _timelockIds[timelockAddress][proposalId] = _timelocks[timelockAddress].hashOperationBatch(
+        uint256 delay = timelock.getMinDelay();
+        _timelockProposalIds[timelock][proposalId] = timelock.hashOperationBatch(
             targets,
             values,
             calldatas,
             0,
             descriptionHash
         );
-        _timelocks[timelockAddress].scheduleBatch(targets, values, calldatas, 0, descriptionHash, delay);
+        timelock.scheduleBatch(targets, values, calldatas, 0, descriptionHash, delay);
 
         emit ProposalQueued(proposalId, block.timestamp + delay);
 
@@ -143,9 +142,9 @@ abstract contract GovernorTimelockControl is IGovernorTimelock, Governor {
         uint256[] memory values,
         bytes[] memory calldatas,
         bytes32 descriptionHash,
-        TimelockController timelockAddress
+        TimelockController timelock
     ) internal virtual override {
-        _timelocks[timelockAddress].executeBatch{value: msg.value}(targets, values, calldatas, 0, descriptionHash);
+        timelock.executeBatch{value: msg.value}(targets, values, calldatas, 0, descriptionHash);
     }
 
     /**
@@ -160,23 +159,23 @@ abstract contract GovernorTimelockControl is IGovernorTimelock, Governor {
         uint256[] memory values,
         bytes[] memory calldatas,
         bytes32 descriptionHash,
-        TimelockController timelockAddress
+        TimelockController timelock
     ) internal virtual override returns (uint256) {
         uint256 proposalId = super._cancel(targets, values, calldatas, descriptionHash);
 
-        if (_timelockIds[timelockAddress][proposalId] != 0) {
-            _timelocks[timelockAddress].cancel(_timelockIds[timelockAddress][proposalId]);
-            delete _timelockIds[timelockAddress][proposalId];
+        if (_timelockProposalIds[timelock][proposalId] != 0) {
+            timelock.cancel(_timelockProposalIds[timelock][proposalId]);
+            delete _timelockProposalIds[timelock][proposalId];
         }
 
         return proposalId;
     }
 
     /**
-     * @dev Address through which the governor executes action. In this case, the timelock.
+     * @dev Addresses through which the governor executes action. In this case, the timelock.
      */
-    function _executors() internal view virtual override returns (address[]) {
-        return executors;
+    function _executors() internal view virtual override returns (TimelockController[] storage) {
+        return _timelocks;
     }
 
     /**
@@ -195,13 +194,30 @@ abstract contract GovernorTimelockControl is IGovernorTimelock, Governor {
 
     //TODO scope out these functions
     function _addTimelock(TimelockController newTimelock) private {
-        emit TimelockAdded(newTimelock);
-        (address(_timelock), address(newTimelock));
-        _timelock = newTimelock;
+        emit TimelockAdded(address(newTimelock));
+        _timelocks.push(newTimelock);
     }
 
     function _removeTimelock(TimelockController oldTimelock) private {
-        emit TimelockRemoved(oldTimelock);
-        _timelock = newTimelock;
+        emit TimelockRemoved(address(oldTimelock));
+        uint256 i = _findIndexOfTimelock(oldTimelock);
+        _removeByIndex(i);
+    }
+
+    function _findIndexOfTimelock(TimelockController timelock) private view returns (uint256) {
+        for (uint256 i = 0; i < _timelocks.length; i++) {
+            if (_timelocks[i] == timelock) {
+                return i;
+            }
+        }
+        revert("GovernorTimelockCompound: Timelock not found");
+    }
+
+    function _removeByIndex(uint256 i) private {
+        while (i < _timelocks.length - 1) {
+            _timelocks[i] = _timelocks[i + 1];
+            i++;
+        }
+        _timelocks.pop();
     }
 }
